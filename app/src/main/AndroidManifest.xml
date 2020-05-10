@@ -24,6 +24,7 @@
         <activity android:name=".ui.login.HomeScreen" />
         <activity android:name=".ui.login.CreateAccount" />
         <activity android:name=".ui.login.ConfirmSignup" />
+        <activity android:name=".ui.login.ForgotPassword" />
     </application>
 
 </manifest>

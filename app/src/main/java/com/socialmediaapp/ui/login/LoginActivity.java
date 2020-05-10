@@ -1,46 +1,35 @@
 package com.socialmediaapp.ui.login;
 
-import android.Manifest;
-import android.app.Activity;
-
-import androidx.core.app.ActivityCompat;
-import androidx.lifecycle.Observer;
-import androidx.lifecycle.ViewModelProviders;
-
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 
 import androidx.annotation.Nullable;
-import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.view.View;
-import android.view.inputmethod.EditorInfo;
-import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.amazonaws.mobile.client.AWSMobileClient;
 import com.amazonaws.mobile.client.Callback;
 import com.amazonaws.mobile.client.UserStateDetails;
+import com.amazonaws.mobile.client.results.ForgotPasswordResult;
 import com.amazonaws.mobile.client.results.SignInResult;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.socialmediaapp.R;
 
-import static com.amazonaws.mobile.client.UserState.SIGNED_IN;
-import static com.amazonaws.mobile.client.UserState.SIGNED_OUT;
+import java.util.prefs.Preferences;
 
 public class LoginActivity extends AppCompatActivity {
     private String username, password;
     private EditText usernameText, passwordText;
     private String TAG;
     private AmazonDynamoDBClient dynamoDBClient;
+    public static final String MY_PREFS = "MyPrefs";
+    private SharedPreferences sharedPreferences;
+    private SharedPreferences.Editor editor;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -48,6 +37,10 @@ public class LoginActivity extends AppCompatActivity {
         setContentView(R.layout.activity_login);
         usernameText = findViewById(R.id.username);
         passwordText = findViewById(R.id.password);
+        sharedPreferences = getSharedPreferences(MY_PREFS, MODE_PRIVATE);
+        editor = sharedPreferences.edit();
+        usernameText.setText(sharedPreferences.getString("username", ""));
+        passwordText.setText(sharedPreferences.getString("password", ""));
         AWSMobileClient.getInstance().initialize(getApplicationContext(), new Callback<UserStateDetails>() {
             @Override
             public void onResult(UserStateDetails result) {
@@ -57,25 +50,9 @@ public class LoginActivity extends AppCompatActivity {
                         finish();
                         break;
                     case SIGNED_OUT:
-                        new Thread(new Runnable() {
-                            @Override
-                            public void run() {
-                                try {
-                                    //Thread.sleep(2000);
-                                } catch(Exception e) {
-                                    e.printStackTrace();
-                                } finally {
-                                    //showSignIn();
-                                    //startActivity(new Intent(getApplicationContext(), LoginActivity.class));
-                                    //finish();
-                                }
-                            }
-                        }).start();
                         break;
                     default:
                         AWSMobileClient.getInstance().signOut();
-                        //startActivity(new Intent(getApplicationContext(), LoginActivity.class));
-                        //showSignIn();
                         break;
                 }
             }
@@ -99,12 +76,13 @@ public class LoginActivity extends AppCompatActivity {
                         Log.d(TAG, "Sign-in callback state: " + signInResult.getSignInState());
                         switch (signInResult.getSignInState()) {
                             case DONE:
+                                editor.putString("username", username);
+                                editor.putString("password", password);
+                                editor.apply();
                                 makeToast("Sign-in done.");
                                 Log.i("User ID: ", AWSMobileClient.getInstance().getUsername());
                                 Log.i("Identity: ", AWSMobileClient.getInstance().getIdentityId());
                                 dynamoDBClient = new AmazonDynamoDBClient(AWSMobileClient.getInstance().getCredentials());
-                                //BackgroundWorker backgroundWorker = new BackgroundWorker();
-                                //backgroundWorker.execute();
                                 Intent intent = new Intent(getApplicationContext(), HomeScreen.class);
                                 startActivity(intent);
                                 finish();
@@ -114,6 +92,8 @@ public class LoginActivity extends AppCompatActivity {
                                 break;
                             case NEW_PASSWORD_REQUIRED:
                                 makeToast("Please confirm sign-in with new password.");
+                                intent = new Intent(getApplicationContext(), ForgotPassword.class);
+                                startActivity(intent);
                                 break;
                             default:
                                 makeToast("Unsupported sign-in confirmation: " + signInResult.getSignInState());
@@ -126,6 +106,32 @@ public class LoginActivity extends AppCompatActivity {
             @Override
             public void onError(Exception e) {
                 Log.e(TAG, "Sign-in error", e);
+                if (e.toString().contains("PasswordResetRequiredException")) {
+                    AWSMobileClient.getInstance().forgotPassword(username, new Callback<ForgotPasswordResult>() {
+                        @Override
+                        public void onResult(final ForgotPasswordResult result) {
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    Log.d(TAG, "forgot password state: " + result.getState());
+                                    switch (result.getState()) {
+                                        case CONFIRMATION_CODE:
+                                            Intent intent = new Intent(getApplicationContext(), ForgotPassword.class);
+                                            startActivity(intent);
+                                            break;
+                                        default:
+                                            break;
+                                    }
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError(Exception e) {
+                            Log.e(TAG, "forgot password error", e);
+                        }
+                    });
+                }
             }
         });
     }
